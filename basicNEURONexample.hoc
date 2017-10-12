@@ -1,0 +1,41 @@
+//load a file which enables use of the NEURON GUI
+load_file("nrngui.hoc")
+
+//create sections of a cell
+create soma, dendrite
+access soma
+
+//define the geometry of the sections, number of segments
+//diameter (diam), and length (L)
+soma {
+  nseg = 1
+  diam = 10
+  L = 10
+}
+dendrite {
+  nseg = 10
+  diam = 3
+  L = 400
+}
+//define electrical characteristics for the cell
+forall{
+  Ra = 150          //intracellular resistivity in Ohm cm
+  Cm = 1            //specific capacitance in uf/cm^2
+  insert pas        //insert passive membrane properties
+  g_pas = 0.0001    //conductance S/cm^2
+  e_pas = -65       //reversal potential of the cell in mV
+}
+
+//connect the sections together
+connect soma(1), dendrite(0)
+
+//attach a synapse half way along the dendtrite
+objectvar synapse
+dendrite synapse = new AlphaSynapse(0.5)
+synapse.onset= 2   //start time of synaptic event in ms
+synapse.tau= 1      //rise time to max conductance in ms
+synapse.gmax= 0.005 //max conducatance in uS
+synapse.e=0         //reversal potential of synapse in mV
+
+//set how long the simulation will run in ms
+tstop = 50

@@ -1,0 +1,357 @@
+/*
+Please note that in order to run this code it is necessary to
+download the NEURON simulation environment, and compile the
+cabpump.mod and camchan.mod files in NEURON/nrn/share/dem/release
+in the same directory as this file, and include the morphology
+file dend2.nrn
+*/
+
+
+
+
+//enable the NEURON GUI
+load_file("nrngui.hoc")
+
+
+xopen("dend2.nrn") //CA1 Morphology as used by Harnett et al. and others
+create spine_head1, spine_neck1
+access spine_head1
+
+//radius 0.21 and L 0.22 gives vol aprox 0.03, the average from harris imaging
+spine_head1 {
+  nseg = 1
+  diam = 0.42
+  L = 0.22
+
+}
+spine_neck1 {
+  nseg = 10
+  diam = 0.17//0.17//0.077
+  L = 0.5//0.5//1.58//0.2
+}
+
+
+connect spine_neck1(0), dendA5_0111111111(0.5)
+connect spine_head1(0), spine_neck1(1)
+
+
+
+
+objref spikesource
+spikesource = new NetStim(0.5) // Location of NetStim is arbitrary
+spikesource.interval = 10 // ms (mean) time between spikes
+spikesource.number = 1 // (average) number of spikes
+spikesource.start = 0 // ms (mean) start time of first spike
+spikesource.noise = 0 // range 0 to 1. Fractional randomness
+
+
+objref synapse
+//connect synapse to spine_head1 for synapse, or
+//dendA5_0111111111 for current injection
+//dendA5_0111111111 synapse = new Exp2Syn(0.5)
+spine_head1 synapse = new Exp2Syn(0.5)
+synapse.tau1 =2.8//0.05//dend0.1 roughly matched by spine 0.1// ms rise time //0.1 for time_course plots
+synapse.tau2 =11.6//1//dend0.5 roughly matched by spine 1// ms decay time must be longer than rise
+synapse.e = 0 // mV reversal potential
+
+objref connection
+thresh = 10
+delay = 100
+weight = 0.01//0.001//0.011//dend0.5 // will be Exp2Syn peak conductance //0.08 for time_course plots
+connection = new NetCon(spikesource, synapse, thresh, delay, weight)
+
+tstop = 250
+
+
+proc init() {local ca
+  finitialize(v_init)
+  fcurrent()
+}
+proc advance() {
+  fadvance()
+}
+
+
+//Set up the electrical and chemical properties of the cell
+proc default() {
+  forall {
+    vuse=-68 //minus sixtyfive
+    v_init = vuse
+    vRest = vuse
+    cm = 1  // From Harnett
+    insert pas
+    g_pas = .0004
+    e_pas = vuse
+    Ra = 150 // WAS ONLY SET FOR SPINE HEAD!!!!!
+  }
+  spine_head1{
+    insert cachan
+    insert cadifpmp
+    pcabar_cachan=0.00004
+    taufactor_cachan=0.5
+    pump0_cadifpmp=6e-14
+  }
+  cao0_ca_ion = 2            //initialize cao/cai
+  cai0_ca_ion =6.2e-5     //4.9e-6//3e-6
+}
+
+default()
+
+
+//vary g_pas with distance to soma
+//according to Harnett 2012
+somaA distance()
+proc setgpas() {
+  forall {
+    for (x,0) {
+      if (distance(x)<=100){
+        g_pas(x) = (3.5e-6*distance(x))+5e-5
+      }
+      if (distance(x)>100) {
+        g_pas(x) = 0.0004
+      }
+      print secname(),"|distance: ", distance(x), "|g_pas: ",g_pas(x)
+    }
+  }
+}
+setgpas()
+
+
+
+
+//check Rin and g_pas match Harnett paper
+//they are close!
+objref configV
+configV = new Vector()
+// use to set input resistance at soma
+//dendA5_011111111
+proc config(){
+   print "entered config"
+  //configV.record(&somaA.v(0.5))
+  configV.record(&dendA5_011111111.v(0.5))
+	run()
+	change = configV.max() + -vuse
+  print configV.max(), " change ", change
+  //print soma.g_pas
+	print "RESISTANCE = ", ((change*(10^-3))/(0.5*(10^-9)))/1000000, "Mohm"
+}
+//config()
+
+//print "dend A5 diam: ", dendA5_011111010.diam(0.5)
+//print "spine head diam: ", spine_head1.daim(0.5)
+//print "spine head diam: ",spine_head1.diam(1)
+
+
+
+
+
+//add calcium
+//match calcium dynamics to Sabatini
+
+//add synapse (from Harnett) according to the following...
+//AMPA synapses were modeled as a double-exponential
+//conductance function with rise time 0.1 ms,
+//decay time 1 ms and reversal potential 0 mV
+
+
+//something for varying spine location
+//add stim for dendritic stimulation
+//add processes for collecting ca at head and voltage in dendrite
+//other processes such as varying spine dimensions
+
+
+/*Some spines from Harris Morphology
+no |diam |L     |Rneck
+0  |0.07 |1.7   |      outlier big Rneck
+1  |0.055|0.2   |
+2  |0.14 |1.1   |
+3  |0.17 |0.5   |      middle of cluster (Average)
+4  |0.34 |0.2   |
+5  |0.51 |0.2   |      outlier small Rneck
+*/
+
+
+
+objref diams
+diams = new Vector(6, 0)
+diams.x[0] = 0.07
+diams.x[1] = 0.055
+diams.x[2] = 0.14
+diams.x[3] = 0.17
+diams.x[4] = 0.34
+diams.x[5] = 0.51
+objref lens
+lens = new Vector(6, 0)
+lens.x[0] = 1.7
+lens.x[1] = 0.2
+lens.x[2] = 1.1
+lens.x[3] = 0.5
+lens.x[4] = 0.2
+lens.x[5] = 0.2
+
+objref recVspine, recVdend, CaSpine
+recVspine = new Vector()
+recVdend = new Vector()
+CaSpine = new Vector()
+
+
+
+
+
+objref savdata
+savdata = new File()
+objref rtc
+rtc = new File()
+objref rVspine, rVdend, tp, rCaspine
+rVspine = new Vector()
+rVdend = new Vector()
+tp = new Vector()
+rCaspine = new Vector()
+proc rtcsav(){
+  savdata.wopen("Spine3SlowForTC.dat")
+  //savdata.printf("time Vspine Vdend\n")
+  tp.record(&t)
+  rVspine.record(&spine_head1.v(0.5))
+  rVdend.record(&dendA5_0111111111.v(0.5))
+  rCaspine.record(&spine_head1.cai(0.5))
+  //CaSpine.record(&spine_head1.cai(0.5))
+  run()
+  print rVdend.max(), rVspine.max()
+  //savdata.printf("time Vspine Vdend Caspine Tau1_0.1, Tau2_", synapse.tau2, "|maxDend:",rVdend.max(),"|maxSpine:",rVspine.max(),"|maxCa:",rCaspine.max(),"\n")
+  savdata.printf("time Vspine Vdend Caspine Tau1_%g, Tau2_%g, weight_%g |maxDend:%g |maxSpine:%g |maxCa:%g |ratio:%g|RneckEstimate:%g\n", synapse.tau1, synapse.tau2, connection.weight, rVdend.max(),rVspine.max(),rCaspine.max(3900, 10000), ((-vuse)+rVspine.max())/((-vuse)+rVdend.max()), ((((-vuse)+rVspine.max())/((-vuse)+rVdend.max()))-1)*26.68)
+
+  for i=0,tp.size()-1 {
+    savdata.printf("%g %g %g %g\n", tp.x(i), rVspine.x(i),rVdend.x(i), rCaspine.x(i))
+  }
+  savdata.close()
+  print "--------------------------------------------------"
+}
+
+
+
+
+//objref neckR
+//neckR = new Vector()
+proc Tau2(){
+  synapse.tau1=0.2
+  synapse.tau2=0.2
+  savdata.wopen("Spine3SynStimLifecycleTau2change.dat")
+  savdata.printf("tau2 Rneck, with tau1:%g\n", synapse.tau1)
+
+  for i=0, 100{
+    tp.record(&t)
+    rVspine.record(&spine_head1.v(0.5))
+    rVdend.record(&dendA5_0111111111.v(0.5))
+    rCaspine.record(&spine_head1.cai(0.5))
+    //CaSpine.record(&spine_head1.cai(0.5))
+    run()
+    //print rVdend.max(), rVspine.max()
+    //savdata.printf("time Vspine Vdend Caspine Tau1_0.1, Tau2_", synapse.tau2, "|maxDend:",rVdend.max(),"|maxSpine:",rVspine.max(),"|maxCa:",rCaspine.max(),"\n")
+    //savdata.printf("time Vspine Vdend Caspine Tau1_%g, Tau2_%g, weight_%g |maxDend:%g |maxSpine:%g |maxCa:%g |ratio:%g|RneckEstimate:%g\n", synapse.tau1, synapse.tau2, connection.weight, rVdend.max(),rVspine.max(),rCaspine.max(), ((-vuse)+rVspine.max())/((-vuse)+rVdend.max()), ((((-vuse)+rVspine.max())/((-vuse)+rVdend.max()))-1)*26.68)
+    savdata.printf("%g %g\n", synapse.tau2, ((((-vuse)+rVspine.max())/((-vuse)+rVdend.max()))-1)*26.68)
+    synapse.tau2=synapse.tau2+1
+  }
+
+  savdata.close()
+  print "--------------------------------------------------"
+}
+proc Tau1(){
+  synapse.tau1=0.1
+  synapse.tau2=10
+  savdata.wopen("Spine3SynStimLifecycleTau2change.dat")
+  savdata.printf("tau1 Rneck, with tau2:%g\n", synapse.tau2)
+  for i=0, 100{
+    tp.record(&t)
+    rVspine.record(&spine_head1.v(0.5))
+    rVdend.record(&dendA5_0111111111.v(0.5))
+    rCaspine.record(&spine_head1.cai(0.5))
+    run()
+    savdata.printf("%g %g\n", synapse.tau1, ((((-vuse)+rVspine.max())/((-vuse)+rVdend.max()))-1)*26.68)
+    synapse.tau1=synapse.tau1+0.1
+  }
+  savdata.close()
+  print "--------------------------------------------------"
+}
+
+
+//compare the effect of fastest and slowest estimates
+//of EPSC timecourse on peak calcium concentration
+proc TauCompare(){
+  synapse.tau1=0.5
+  synapse.tau2=1.4
+    rVspine.record(&spine_head1.v(0.5))
+    rVdend.record(&dendA5_0111111111.v(0.5))
+    rCaspine.record(&spine_head1.cai(0.5))
+    run()
+    print "fast: ", ((((-vuse)+rVspine.max())/((-vuse)+rVdend.max()))-1)*26.68
+    synapse.tau1=2.8
+    synapse.tau2=11.6
+      rVspine.record(&spine_head1.v(0.5))
+      rVdend.record(&dendA5_0111111111.v(0.5))
+      rCaspine.record(&spine_head1.cai(0.5))
+      run()
+      print "slow: ", ((((-vuse)+rVspine.max())/((-vuse)+rVdend.max()))-1)*26.68
+}
+
+
+
+//effect of increasing amplitude EPSPs on
+//peak calcium concentration
+proc epspca(){
+  synapse.tau2=50
+  connection.weight=0.001
+  savdata.wopen("CaEPSPupSpine3.dat")
+  savdata.printf("tau2 Rneck, with tau1:%g\n", synapse.tau1)
+  for i=0, 1000{
+    tp.record(&t)
+    rVdend.record(&dendA5_0111111111.v(0.5))
+    rCaspine.record(&spine_head1.cai(0.5))
+    run()
+    savdata.printf("%g %g\n", rCaspine.max(3900, 10000), rVdend.max())
+    connection.weight=connection.weight+0.001
+  }
+  //for i=0,tp.size()-1 {
+  //  savdata.printf("%g %g\n", tp.x(i),rCaspine.x(i))
+  //}
+  savdata.close()
+  print "--------------------------------------------------"
+}
+
+
+
+//calculate neck resistance according to Harnett et al
+//equation ((EPSPspine/EPSPdend)-1)*Rdend
+//with local Rdend of 26.68 Mohm
+objref ratVspine, ratVdend//, tp, ratCaspine
+ratVspine = new Vector()
+ratVdend = new Vector()
+proc rneck(){
+  ratVspine.record(&spine_head1.v(0.5))
+  ratVdend.record(&dendA5_0111111111.v(0.5))
+  run()
+  print "AR=", (((-vuse)+ratVspine.max())/((-vuse)+ratVdend.max()))
+  print "Rneck=", ((((-vuse)+ratVspine.max())/((-vuse)+ratVdend.max()))-1)*26.68
+}
+
+//print peak spine heas voltage, neck voltage,
+//dend voltage, and calculate Amplitude Ratios
+//for head:dend an neck:dend
+objref recordVspine, recordVdend, recordVneck
+recordVspine = new Vector()
+recordVdend = new Vector()
+recordVneck = new Vector()
+proc peaks(){
+  recordVspine.record(&spine_head1.v(0.5))
+  recordVneck.record(&spine_neck1.v(0))
+  recordVdend.record(&dendA5_0111111111.v(0.5))
+  run()
+  print "spine max:", recordVspine.max()
+  print "dend max:", recordVdend.max()
+  print "neck max:", recordVneck.max()
+  print "dend ratio:", ((-vuse)+recordVspine.max())/((-vuse)+recordVdend.max())
+  print "neck ratio:", ((-vuse)+recordVspine.max())/((-vuse)+recordVneck.max())
+}
+
+//open the session file for the NEURON GUI, this
+//displays all the plots and cell morphology
+xopen("fullmorph.ses")
